@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block title %}Speech Emotion Recognition{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>🎙️ Speech Emotion Recognition</h1>
+
+  <form method="POST" action="/predict" enctype="multipart/form-data">
+    <input type="file" name="audio" accept=".wav" required
+           onchange="previewAudio(event)">
+    <br><br>
+
+    <!-- Audio Player -->
+    <audio id="audioPlayer" controls style="display:none; width:100%;"></audio>
+    <br>
+
+    <button type="submit" class="submit">Analyze Emotion</button>
+  </form>
+
+  {% if emotion %}
+    <hr>
+    <h2>Predicted Emotion:</h2>
+    <h1>{{ emotion }}</h1>
+  {% endif %}
+</div>
+
+<script>
+function previewAudio(event) {
+  const audioPlayer = document.getElementById('audioPlayer');
+  const file = event.target.files[0];
+  if (file) {
+    audioPlayer.src = URL.createObjectURL(file);
+    audioPlayer.style.display = "block";
+  }
+}
+</script>
+{% endblock %}
