@@ -1,16 +1,11 @@
-import librosa
-import numpy as np
-from preprocessing.audio_utils import load_audio
+import torch
+import torchaudio
 
-def extract_features(path):
-    y, sr = load_audio(path)
-
-    mfcc = librosa.feature.mfcc(
-        y=y,
-        sr=sr,
-        n_mfcc=40,
-        n_fft=512,
-        hop_length=256
+def extract_mfcc(waveform, sample_rate=16000, n_mfcc=40):
+    mfcc_transform = torchaudio.transforms.MFCC(
+        sample_rate=sample_rate,
+        n_mfcc=n_mfcc,
+        melkwargs={"n_fft": 512, "hop_length": 256, "n_mels": 40}
     )
-
-    return np.mean(mfcc.T, axis=0)
+    mfcc = mfcc_transform(waveform)
+    return mfcc.squeeze(0).transpose(0, 1)  # shape: (time, n_mfcc)

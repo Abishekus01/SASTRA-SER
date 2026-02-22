@@ -1,47 +1,84 @@
 import os
-import joblib
-import numpy as np
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from preprocessing.feature_extraction import extract_features
-from utils.config import DATASET_PATH, MODEL_PATH, EMOTIONS
+import torch
+from torch import nn, optim
+from torch.utils.data import Dataset, DataLoader
+from audio_utils import load_wav
+from feature_extraction import extract_mfcc
 
-X, y = [], []
+# --- CONFIG ---
+DATASET_PATH = "../dataset/train"
+NUM_CLASSES = 4       # adjust to your number of emotions
+BATCH_SIZE = 16
+EPOCHS = 20
+LR = 0.001
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-for speaker in os.listdir(DATASET_PATH):
-    speaker_path = os.path.join(DATASET_PATH, speaker)
+# --- DATASET ---
+class SERDataset(Dataset):
+    def __init__(self, root_dir):
+        self.files = []
+        self.labels = []
+        self.classes = sorted(os.listdir(root_dir))
+        for idx, cls in enumerate(self.classes):
+            cls_dir = os.path.join(root_dir, cls)
+            for f in os.listdir(cls_dir):
+                if f.endswith(".wav"):
+                    self.files.append(os.path.join(cls_dir, f))
+                    self.labels.append(idx)
 
-    for emotion in EMOTIONS:
-        emotion_path = os.path.join(speaker_path, emotion)
+    def __len__(self):
+        return len(self.files)
 
-        if not os.path.exists(emotion_path):
-            continue
+    def __getitem__(self, idx):
+        waveform = load_wav(self.files[idx])
+        features = extract_mfcc(waveform)  # shape: (time, n_mfcc)
+        # Pad/trim to 100 frames
+        max_len = 100
+        if features.shape[0] < max_len:
+            pad = torch.zeros(max_len - features.shape[0], features.shape[1])
+            features = torch.cat([features, pad], dim=0)
+        else:
+            features = features[:max_len]
+        return features, self.labels[idx]
 
-        for file in os.listdir(emotion_path):
-            if file.endswith(".wav"):
-                file_path = os.path.join(emotion_path, file)
+# --- MODEL ---
+class SimpleCNN(nn.Module):
+    def __init__(self, n_classes):
+        super().__init__()
+        self.conv1 = nn.Conv1d(40, 64, kernel_size=5, stride=1)
+        self.pool = nn.AdaptiveMaxPool1d(50)
+        self.fc1 = nn.Linear(64 * 50, 128)
+        self.fc2 = nn.Linear(128, n_classes)
+        self.relu = nn.ReLU()
 
-                try:
-                    features = extract_features(file_path)
-                    X.append(features)
-                    y.append(emotion)
-                except:
-                    print("Error in:", file_path)
+    def forward(self, x):
+        x = x.transpose(1, 2)  # (batch, n_mfcc, time)
+        x = self.relu(self.conv1(x))
+        x = self.pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
 
-X = np.array(X)
-y = np.array(y)
+# --- TRAIN ---
+dataset = SERDataset(DATASET_PATH)
+loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-print("Feature shape:", X.shape)
+model = SimpleCNN(NUM_CLASSES).to(DEVICE)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=LR)
 
-# ✅ SCALE FEATURES
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
+for epoch in range(EPOCHS):
+    total_loss = 0
+    for X, y in loader:
+        X, y = X.to(DEVICE), y.to(DEVICE)
+        optimizer.zero_grad()
+        outputs = model(X)
+        loss = criterion(outputs, y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {total_loss/len(loader):.4f}")
 
-# ✅ TRAIN MODEL
-model = SVC(kernel="rbf", C=10, gamma="scale", probability=True)
-model.fit(X, y)
-
-# ✅ SAVE BOTH MODEL + SCALER
-joblib.dump((model, scaler), MODEL_PATH)
-
-print("✅ Model trained & saved at:", MODEL_PATH)
+torch.save(model.state_dict(), "../models/emotion_model.pth")
+print(" Model saved to ../models/emotion_model.pth")
