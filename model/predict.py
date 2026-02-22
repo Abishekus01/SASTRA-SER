@@ -1,32 +1,18 @@
-import torch
-from audio_utils import load_wav
-from feature_extraction import extract_mfcc
-from train import SimpleCNN, NUM_CLASSES, DEVICE
+#predict.py
+import joblib
+import os
+from preprocessing.feature_extraction import extract_features
+from utils.config import MODEL_PATH
 
-# Load model
-model = SimpleCNN(NUM_CLASSES).to(DEVICE)
-model.load_state_dict(torch.load("../models/emotion_model.pth", map_location=DEVICE))
-model.eval()
+def predict_emotion(audio_path):
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError("Model not found. Train first.")
 
-# Classes (adjust if different)
-classes = ["angry", "happy", "neutral", "sad"]
+    model, scaler = joblib.load(MODEL_PATH)
 
-def predict(file_path):
-    waveform = load_wav(file_path)
-    features = extract_mfcc(waveform)
-    max_len = 100
-    if features.shape[0] < max_len:
-        pad = torch.zeros(max_len - features.shape[0], features.shape[1])
-        features = torch.cat([features, pad], dim=0)
-    else:
-        features = features[:max_len]
-    features = features.unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        outputs = model(features)
-        pred = torch.argmax(outputs, dim=1).item()
-    return classes[pred]
+    features = extract_features(audio_path).reshape(1, -1)
+    features = scaler.transform(features)
 
-# --- Example ---
-if __name__ == "__main__":
-    path = "../dataset/test/sample.wav"
-    print("Predicted emotion:", predict(path))
+    prediction = model.predict(features)
+
+    return prediction[0]
