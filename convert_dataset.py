@@ -1,24 +1,23 @@
 import os
 from pydub import AudioSegment
+from pydub.utils import which
+
+# 🔧 Fix: point pydub to ffmpeg
+AudioSegment.converter = which("ffmpeg")
 
 DATASET_PATH = "datasets/TESS/english"
 
-for speaker in os.listdir(DATASET_PATH):
-    speaker_path = os.path.join(DATASET_PATH, speaker)
+for root, dirs, files in os.walk(DATASET_PATH):
+    for file in files:
+        if file.endswith(".wav"):
+            wav_path = os.path.join(root, file)
 
-    for emotion in os.listdir(speaker_path):
-        emotion_path = os.path.join(speaker_path, emotion)
+            audio = AudioSegment.from_wav(wav_path)
 
-        for file in os.listdir(emotion_path):
-            if file.endswith(".wav"):
-                wav_path = os.path.join(emotion_path, file)
+            mp3_path = wav_path.replace(".wav", ".mp3")
+            ogg_path = wav_path.replace(".wav", ".ogg")
 
-                audio = AudioSegment.from_wav(wav_path)
+            audio.export(mp3_path, format="mp3")
+            audio.export(ogg_path, format="ogg")
 
-                mp3_path = wav_path.replace(".wav", ".mp3")
-                mpeg_path = wav_path.replace(".wav", ".mpeg")
-
-                audio.export(mp3_path, format="mp3")
-                audio.export(mpeg_path, format="mp3")  # MPEG = MP3 codec
-
-print("All WAV → MP3 & MPEG converted")
+print("Conversion completed: WAV → MP3 & OGG")
