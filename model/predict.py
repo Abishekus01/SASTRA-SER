@@ -1,18 +1,34 @@
-#predict.py
-import joblib
-import os
-from preprocessing.feature_extraction import extract_features
-from utils.config import MODEL_PATH
+# model/predict.py
+# SwinTSER inference for Flask
 
-def predict_emotion(audio_path):
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError("Model not found. Train first.")
+import torch
+from preprocessing.audio_utils import load_wav
+from preprocessing.feature_extraction import extract_log_mel
+from model.train import SwinTSER
 
-    model, scaler = joblib.load(MODEL_PATH)
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-    features = extract_features(audio_path).reshape(1, -1)
-    features = scaler.transform(features)
+classes = ["angry", "happy", "neutral", "sad"]
 
-    prediction = model.predict(features)
+model = SwinTSER(num_classes=len(classes)).to(DEVICE)
+model.load_state_dict(torch.load("model/model_weights.pth", map_location=DEVICE))
+model.eval()
 
-    return prediction[0]
+def predict_emotion(file_path):
+    waveform = load_wav(file_path)
+    features = extract_log_mel(waveform)   # (time, mel)
+
+    max_len = 128
+    if features.shape[0] < max_len:
+        pad = torch.zeros(max_len - features.shape[0], features.shape[1])
+        features = torch.cat([features, pad], dim=0)
+    else:
+        features = features[:max_len]
+
+    features = features.unsqueeze(0).to(DEVICE)
+
+    with torch.no_grad():
+        outputs = model(features)
+        pred = torch.argmax(outputs, dim=1).item()
+
+    return classes[pred]
