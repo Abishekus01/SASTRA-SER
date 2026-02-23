@@ -7,6 +7,8 @@ from preprocessing.audio_utils import load_wav
 from preprocessing.feature_extraction import extract_log_mel
 from model.swin_tser import SwinTSER
 from utils.config import DATASET_PATH, EMOTIONS
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 EPOCHS = 20
