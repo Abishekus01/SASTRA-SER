@@ -4,7 +4,7 @@
 import torch
 from preprocessing.audio_utils import load_wav
 from preprocessing.feature_extraction import extract_log_mel
-from model.train import SwinTSER
+from model.swin_tser import SwinTSER
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

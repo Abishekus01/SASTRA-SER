@@ -1,18 +1,23 @@
-#audio_utils.py
-import librosa
-import numpy as np
+import torch
+import torchaudio
 
-SAMPLE_RATE = 22050
-DURATION = 3   # seconds
+SAMPLE_RATE = 16000
+DURATION = 3
 SAMPLES = SAMPLE_RATE * DURATION
 
-def load_audio(path):
-    y, sr = librosa.load(path, sr=SAMPLE_RATE)
+def load_wav(path):
+    waveform, sr = torchaudio.load(path)
 
-    if len(y) < SAMPLES:
-        pad_width = SAMPLES - len(y)
-        y = np.pad(y, (0, pad_width))
+    if sr != SAMPLE_RATE:
+        resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
+        waveform = resampler(waveform)
+
+    waveform = waveform.mean(dim=0)  # mono
+
+    if waveform.shape[0] < SAMPLES:
+        pad = torch.zeros(SAMPLES - waveform.shape[0])
+        waveform = torch.cat([waveform, pad])
     else:
-        y = y[:SAMPLES]
+        waveform = waveform[:SAMPLES]
 
-    return y, sr
+    return waveform

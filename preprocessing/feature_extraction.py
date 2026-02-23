@@ -1,17 +1,17 @@
-#feature_extraction.py
-import librosa
-import numpy as np
-from preprocessing.audio_utils import load_audio
+import torch
+import torchaudio
 
-def extract_features(path):
-    y, sr = load_audio(path)
+mel_transform = torchaudio.transforms.MelSpectrogram(
+    sample_rate=16000,
+    n_fft=1024,
+    hop_length=256,
+    n_mels=128
+)
 
-    mfcc = librosa.feature.mfcc(
-        y=y,
-        sr=sr,
-        n_mfcc=40,
-        n_fft=512,
-        hop_length=256
-    )
+amplitude_to_db = torchaudio.transforms.AmplitudeToDB()
 
-    return np.mean(mfcc.T, axis=0)
+def extract_log_mel(waveform):
+    mel = mel_transform(waveform)
+    log_mel = amplitude_to_db(mel)
+    log_mel = log_mel.transpose(0, 1)  # (time, mel)
+    return log_mel

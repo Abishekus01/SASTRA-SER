@@ -1,48 +1,77 @@
-#train.py
 import os
-import joblib
-import numpy as np
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from preprocessing.feature_extraction import extract_features
-from utils.config import DATASET_PATH, MODEL_PATH, EMOTIONS
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
 
-X, y = [], []
+from preprocessing.audio_utils import load_wav
+from preprocessing.feature_extraction import extract_log_mel
+from model.swin_tser import SwinTSER
+from utils.config import DATASET_PATH, EMOTIONS
 
-for speaker in os.listdir(DATASET_PATH):
-    speaker_path = os.path.join(DATASET_PATH, speaker)
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+EPOCHS = 20
+BATCH_SIZE = 16
 
-    for emotion in EMOTIONS:
-        emotion_path = os.path.join(speaker_path, emotion)
+class SERDataset(Dataset):
+    def __init__(self):
+        self.files = []
+        self.labels = []
 
-        if not os.path.exists(emotion_path):
-            continue
+        for speaker in os.listdir(DATASET_PATH):
+            speaker_path = os.path.join(DATASET_PATH, speaker)
 
-        for file in os.listdir(emotion_path):
-            if file.endswith(".wav"):
-                file_path = os.path.join(emotion_path, file)
+            for emotion in EMOTIONS:
+                emotion_path = os.path.join(speaker_path, emotion)
 
-                try:
-                    features = extract_features(file_path)
-                    X.append(features)
-                    y.append(emotion)
-                except:
-                    print("Error in:", file_path)
+                if not os.path.exists(emotion_path):
+                    continue
 
-X = np.array(X)
-y = np.array(y)
+                for file in os.listdir(emotion_path):
+                    if file.endswith(".wav"):
+                        self.files.append(os.path.join(emotion_path, file))
+                        self.labels.append(EMOTIONS.index(emotion))
 
-print("Feature shape:", X.shape)
+    def __len__(self):
+        return len(self.files)
 
-# ✅ SCALE FEATURES
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
+    def __getitem__(self, idx):
+        waveform = load_wav(self.files[idx])
+        features = extract_log_mel(waveform)
 
-# ✅ TRAIN MODEL
-model = SVC(kernel="rbf", C=10, gamma="scale", probability=True)
-model.fit(X, y)
+        max_len = 128
+        if features.shape[0] < max_len:
+            pad = torch.zeros(max_len - features.shape[0], features.shape[1])
+            features = torch.cat([features, pad], dim=0)
+        else:
+            features = features[:max_len]
 
-# ✅ SAVE BOTH MODEL + SCALER
-joblib.dump((model, scaler), MODEL_PATH)
+        label = torch.tensor(self.labels[idx])
+        return features, label
 
-print("✅ Model trained & saved at:", MODEL_PATH)
+dataset = SERDataset()
+loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+model = SwinTSER(num_classes=len(EMOTIONS)).to(DEVICE)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+
+for epoch in range(EPOCHS):
+    model.train()
+    total_loss = 0
+
+    for x, y in loader:
+        x, y = x.to(DEVICE), y.to(DEVICE)
+
+        optimizer.zero_grad()
+        outputs = model(x)
+        loss = criterion(outputs, y)
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+
+    print(f"Epoch {epoch+1}/{EPOCHS} Loss: {total_loss:.4f}")
+
+torch.save(model.state_dict(), "model/model_weights.pth")
+print("✅ SwinTSER model saved!")
